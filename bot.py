@@ -6,6 +6,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from config import TELEGRAM_TOKEN
 from memory import init_db, get_bankroll, get_pending_bets, settle_bet, get_stats
 from scheduler import start_scheduler, generate_coupon, format_coupon, get_schedule_status
+from agents.settler import run_settler, format_settle_report
 from backtest import run_backtest, format_backtest_report
 
 logging.basicConfig(
@@ -96,6 +97,23 @@ async def cmd_settle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("bet_id должен быть числом.")
 
 
+async def cmd_settle_auto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Manually trigger the auto-settler."""
+    await update.message.reply_text("⏳ Проверяю результаты матчей…")
+
+    def _run():
+        settled = run_settler()
+        report  = format_settle_report(settled) or "Нет ставок готовых к расчёту."
+        import asyncio
+        asyncio.run(update.get_bot().send_message(
+            chat_id=update.effective_chat.id,
+            text=report,
+            parse_mode="HTML",
+        ))
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"<b>🗓 Планировщик:</b>\n{get_schedule_status()}",
@@ -104,17 +122,12 @@ async def cmd_schedule(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """
-    /backtest [season]   — run backtest (default: current season).
-    Runs in a background thread so the bot stays responsive.
-    """
-    args  = ctx.args
+    args   = ctx.args
     season = int(args[0]) if args and args[0].isdigit() else None
     season_str = str(season) if season else "текущий сезон"
 
-    msg = await update.message.reply_text(
-        f"⏳ Запускаю бэктест ({season_str})…\n"
-        f"Это займёт 1-3 минуты — запрашиваю исторические данные.",
+    await update.message.reply_text(
+        f"⏳ Запускаю бэктест ({season_str})…\nЭто займёт 1-3 минуты."
     )
 
     bot  = update.get_bot()
@@ -128,12 +141,12 @@ async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             report = f"❌ Ошибка бэктеста: {e}"
 
         import asyncio
-        asyncio.run(_send(bot, chat, report))
-
-    async def _send(b, c, text):
-        # Telegram message limit 4096 chars
-        for i in range(0, len(text), 4000):
-            await b.send_message(chat_id=c, text=text[i:i+4000], parse_mode="HTML")
+        async def _send():
+            for i in range(0, len(report), 4000):
+                await bot.send_message(
+                    chat_id=chat, text=report[i:i+4000], parse_mode="HTML"
+                )
+        asyncio.run(_send())
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -142,13 +155,14 @@ async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(app: Application):
     await app.bot.set_my_commands([
-        BotCommand("coupon",   "Сгенерировать купон value bets"),
-        BotCommand("stats",    "Статистика ставок"),
-        BotCommand("balance",  "Текущий банкролл"),
-        BotCommand("pending",  "Ожидающие ставки"),
-        BotCommand("settle",   "Закрыть ставку: /settle <id> <win|loss|void>"),
-        BotCommand("schedule", "Статус планировщика"),
-        BotCommand("backtest", "Бэктест модели: /backtest [год]"),
+        BotCommand("coupon",      "Сгенерировать купон value bets"),
+        BotCommand("stats",       "Статистика ставок"),
+        BotCommand("balance",     "Текущий банкролл"),
+        BotCommand("pending",     "Ожидающие ставки"),
+        BotCommand("settle",      "Закрыть ставку вручную: /settle <id> <win|loss|void>"),
+        BotCommand("settle_auto", "Авто-расчёт всех завершённых ставок"),
+        BotCommand("schedule",    "Статус планировщика"),
+        BotCommand("backtest",    "Бэктест модели: /backtest [год]"),
     ])
 
 
@@ -163,13 +177,14 @@ def main():
         .build()
     )
 
-    app.add_handler(CommandHandler("coupon",   cmd_coupon))
-    app.add_handler(CommandHandler("stats",    cmd_stats))
-    app.add_handler(CommandHandler("balance",  cmd_balance))
-    app.add_handler(CommandHandler("pending",  cmd_pending))
-    app.add_handler(CommandHandler("settle",   cmd_settle))
-    app.add_handler(CommandHandler("schedule", cmd_schedule))
-    app.add_handler(CommandHandler("backtest", cmd_backtest))
+    app.add_handler(CommandHandler("coupon",      cmd_coupon))
+    app.add_handler(CommandHandler("stats",       cmd_stats))
+    app.add_handler(CommandHandler("balance",     cmd_balance))
+    app.add_handler(CommandHandler("pending",     cmd_pending))
+    app.add_handler(CommandHandler("settle",      cmd_settle))
+    app.add_handler(CommandHandler("settle_auto", cmd_settle_auto))
+    app.add_handler(CommandHandler("schedule",    cmd_schedule))
+    app.add_handler(CommandHandler("backtest",    cmd_backtest))
 
     logger.info("⚽ Football Bot запущен")
     app.run_polling(drop_pending_updates=True)
