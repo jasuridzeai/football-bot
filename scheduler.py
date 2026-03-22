@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 from agents.collector import get_upcoming_fixtures
-from agents.analyzer import analyze_fixture
+from agents.analyzer_v2 import analyze_fixture_v2 as analyze_fixture
 from agents.bankroll import add_stakes, is_stop_loss_triggered
 from agents.validator import validate_and_select
 from agents.settler import run_settler, notify_settled
