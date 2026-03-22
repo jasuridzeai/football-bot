@@ -33,7 +33,7 @@ LEAGUE_AVG_AWAY = 1.20
 
 H2H_WEIGHT  = 0.25       # blend: final = (1-H2H_WEIGHT)*form + H2H_WEIGHT*h2h
 DC_RHO      = -0.13      # Dixon-Coles ρ parameter
-MAX_GOALS   = 9          # summation range for Poisson grid
+MAX_GOALS   = 12         # summation range for Poisson grid
 
 
 # ── Poisson helpers ────────────────────────────────────────────────────────────
