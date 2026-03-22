@@ -98,27 +98,34 @@ def get_pending_bets() -> list[dict]:
 def settle_bet(bet_id: int, result: str) -> float | None:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT odds, stake FROM bets WHERE id=?", (bet_id,))
-    row = c.fetchone()
-    if not row:
+    try:
+        c.execute("SELECT odds, stake FROM bets WHERE id=?", (bet_id,))
+        row = c.fetchone()
+        if not row:
+            return None
+        odds, stake = row
+        if result == "win":
+            profit = round(stake * (odds - 1), 2)
+        elif result == "loss":
+            profit = -stake
+        else:
+            profit = 0.0
+        # Update bet and bankroll atomically in a single transaction
+        c.execute(
+            "UPDATE bets SET status='settled', result=?, profit=? WHERE id=?",
+            (result, profit, bet_id),
+        )
+        c.execute(
+            "UPDATE bankroll SET amount=amount+?, updated_at=? WHERE id=1",
+            (profit, datetime.now().isoformat()),
+        )
+        conn.commit()
+        return profit
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
         conn.close()
-        return None
-    odds, stake = row
-    if result == "win":
-        profit = round(stake * (odds - 1), 2)
-    elif result == "loss":
-        profit = -stake
-    else:
-        profit = 0.0
-    c.execute(
-        "UPDATE bets SET status=?, result=?, profit=? WHERE id=?",
-        (result, result, profit, bet_id),
-    )
-    conn.commit()
-    conn.close()
-    current, initial = get_bankroll()
-    update_bankroll(current + profit)
-    return profit
 
 
 def get_stats() -> dict:
@@ -131,7 +138,7 @@ def get_stats() -> dict:
             SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END) as losses,
             SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
             SUM(COALESCE(profit, 0)) as total_profit,
-            SUM(CASE WHEN status != 'pending' THEN stake ELSE 0 END) as total_staked
+            SUM(CASE WHEN status = 'settled' THEN stake ELSE 0 END) as total_staked
         FROM bets
     """)
     row = c.fetchone()

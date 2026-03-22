@@ -16,6 +16,7 @@ Cache TTL: 6 h for form/H2H, 1 h for lineups (re-check closer to kickoff).
 """
 
 import logging
+import math
 import sqlite3
 import time
 from datetime import datetime
@@ -53,6 +54,7 @@ def _init_lineup_tables():
         CREATE TABLE IF NOT EXISTS h2h_cache (
             home_id INTEGER, away_id INTEGER, last_n INTEGER,
             avg_home_goals REAL, avg_away_goals REAL,
+            sample INTEGER,
             cached_at TEXT,
             PRIMARY KEY (home_id, away_id, last_n)
         )
@@ -130,7 +132,6 @@ def get_recent_form(team_id: int, league_id: int, last_n: int = FORM_LAST_N) -> 
         # Sort newest first
         matches.sort(key=lambda x: x["fixture"]["date"], reverse=True)
 
-        import math
         home_scored_w = home_conceded_w = away_scored_w = away_conceded_w = 0.0
         home_weight   = away_weight = 0.0
         form_chars = []
@@ -202,14 +203,14 @@ def get_h2h(home_id: int, away_id: int, last_n: int = H2H_LAST_N) -> dict:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT avg_home_goals, avg_away_goals, cached_at "
+        "SELECT avg_home_goals, avg_away_goals, sample, cached_at "
         "FROM h2h_cache WHERE home_id=? AND away_id=? AND last_n=?",
         (home_id, away_id, last_n),
     )
     row = c.fetchone()
     conn.close()
-    if row and _age_hours(row[2]) < FORM_TTL_H:
-        return {"avg_home_goals": row[0], "avg_away_goals": row[1], "sample": last_n}
+    if row and _age_hours(row[3]) < FORM_TTL_H:
+        return {"avg_home_goals": row[0], "avg_away_goals": row[1], "sample": row[2]}
 
     fallback = {"avg_home_goals": 1.40, "avg_away_goals": 1.10, "sample": 0}
 
@@ -254,11 +255,11 @@ def get_h2h(home_id: int, away_id: int, last_n: int = H2H_LAST_N) -> dict:
         c = conn.cursor()
         c.execute("""
             INSERT OR REPLACE INTO h2h_cache
-            (home_id, away_id, last_n, avg_home_goals, avg_away_goals, cached_at)
-            VALUES (?,?,?,?,?,?)
+            (home_id, away_id, last_n, avg_home_goals, avg_away_goals, sample, cached_at)
+            VALUES (?,?,?,?,?,?,?)
         """, (home_id, away_id, last_n,
               result["avg_home_goals"], result["avg_away_goals"],
-              datetime.utcnow().isoformat()))
+              result["sample"], datetime.utcnow().isoformat()))
         conn.commit()
         conn.close()
         time.sleep(0.2)

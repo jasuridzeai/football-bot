@@ -24,7 +24,7 @@ from typing import Optional
 
 import requests
 
-from agents.analyzer import match_probabilities
+from agents.analyzer_v2 import match_probabilities_v2 as match_probabilities
 from agents.collector import AF_HEADERS
 from config import (
     API_FOOTBALL_URL, LEAGUE_IDS, DB_PATH,
@@ -261,12 +261,13 @@ def run_backtest(
             hs        = stats_cache.get(home_id, {})
             as_       = stats_cache.get(away_id, {})
 
-            p_home, p_draw, p_away = match_probabilities(
-                home_attack=hs.get("home_scored",   1.30),
-                home_defense=hs.get("home_conceded", 1.10),
-                away_attack=as_.get("away_scored",   1.00),
-                away_defense=as_.get("away_conceded", 1.30),
+            home_xg = max(
+                hs.get("home_scored", 1.30) * as_.get("away_conceded", 1.30) / 1.20, 0.1
             )
+            away_xg = max(
+                as_.get("away_scored", 1.00) * hs.get("home_conceded", 1.10) / 1.50, 0.1
+            )
+            p_home, p_draw, p_away = match_probabilities(home_xg, away_xg)
 
             sim_h, sim_d, sim_a = _sim_odds(p_home, p_draw, p_away, margin, rng)
 

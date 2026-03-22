@@ -122,9 +122,11 @@ def get_odds(fixture: dict) -> dict:
         for game in resp.json():
             g_home = game.get("home_team", "").lower()
             g_away = game.get("away_team", "").lower()
-            # Partial-name match (first 5 chars)
-            if (home_key[:5] in g_home or g_home[:5] in home_key) and \
-               (away_key[:5] in g_away or g_away[:5] in away_key):
+            # Token-based match: all words of length >= 4 must appear in opponent string
+            def _name_match(a: str, b: str) -> bool:
+                tokens = [t for t in a.split() if len(t) >= 4]
+                return bool(tokens) and all(t in b for t in tokens)
+            if _name_match(home_key, g_home) and _name_match(away_key, g_away):
                 for bm in game.get("bookmakers", []):
                     for market in bm.get("markets", []):
                         if market["key"] == "h2h":

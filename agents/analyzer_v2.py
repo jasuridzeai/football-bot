@@ -113,8 +113,8 @@ def _build_xg(
     h2h_away_xg = h2h["avg_away_goals"]
 
     # Blend — weight H2H less when sample is small
-    sample   = min(h2h.get("sample", 0), H2H_LAST_N := 8)
-    h2h_w    = H2H_WEIGHT * (sample / 8)          # scale down if < 8 H2H matches
+    sample = min(h2h.get("sample", 0), 8)
+    h2h_w  = H2H_WEIGHT * (sample / 8)            # scale down if < 8 H2H matches
     form_w   = 1.0 - h2h_w
 
     home_xg = form_w * form_home_xg + h2h_w * h2h_home_xg
