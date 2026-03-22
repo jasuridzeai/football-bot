@@ -54,11 +54,13 @@ def format_coupon(bets: list[dict]) -> str:
         return "Нет подходящих value bets."
     lines = ["<b>⚽ Купон value bets:</b>\n"]
     for i, bet in enumerate(bets, 1):
+        comment = bet.get("comment", "")
         lines.append(
             f"{i}. <b>{bet['home_team']} vs {bet['away_team']}</b> [{bet.get('league','')}]\n"
             f"   📌 {bet['selection']} @ <b>{bet['odds']:.2f}</b>\n"
             f"   📊 Edge: <b>{bet['edge']*100:.1f}%</b> | Ставка: <b>{bet['stake']:.2f}€</b>\n"
             f"   🕐 {bet['kickoff'][:16]} UTC\n"
+            + (f"\n   💡 {comment}\n" if comment else "")
         )
     return "\n".join(lines)
 

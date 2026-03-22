@@ -141,6 +141,98 @@ def _edge(model_prob: float, bookie_odds: float) -> float:
     return model_prob - 1.0 / bookie_odds
 
 
+def _build_comment(
+    selection: str,
+    model_prob: float,
+    bookie_odds: float,
+    home_team: str,
+    away_team: str,
+    home_form: dict,
+    away_form: dict,
+    h2h: dict,
+    lu: dict,
+) -> str:
+    """Generate a plain-language explanation for why this bet was selected."""
+    lines = []
+
+    # ── Form analysis
+    def _form_summary(form_str: str, team: str, is_home: bool) -> str:
+        wins = form_str.count("W")
+        losses = form_str.count("L")
+        draws = form_str.count("D")
+        n = len([c for c in form_str if c in "WDL"])
+        if n == 0:
+            return f"{team}: форма неизвестна."
+        venue = "дома" if is_home else "в гостях"
+        if wins >= 4:
+            return f"{team} в отличной форме — {wins} побед из {n} последних матчей {venue}."
+        elif wins >= 3:
+            return f"{team} в хорошей форме — {wins} побед из {n} последних матчей {venue}."
+        elif losses >= 4:
+            return f"{team} в плохой форме — {losses} поражений из {n} последних матчей {venue}."
+        elif losses >= 3:
+            return f"{team} нестабилен — {losses} поражений из {n} последних матчей {venue}."
+        else:
+            return f"{team} в средней форме — {wins} побед, {draws} ничьих, {losses} поражений из {n} матчей {venue}."
+
+    lines.append(_form_summary(home_form["form_str"], home_team, is_home=True))
+    lines.append(_form_summary(away_form["form_str"], away_team, is_home=False))
+
+    # ── Injuries
+    h_inj = lu["home_injuries"]
+    a_inj = lu["away_injuries"]
+    has_lineup = lu.get("has_lineup", False)
+
+    if h_inj == 0 and a_inj == 0:
+        lines.append("Обе команды выходят без потерь в составе.")
+    else:
+        if h_inj > 0:
+            severity = "серьёзные потери" if h_inj >= 3 else "небольшие потери"
+            lines.append(f"У {home_team} {severity} — {h_inj} игрок(ов) не доступны.")
+        else:
+            lines.append(f"{home_team} выходит полным составом.")
+        if a_inj > 0:
+            severity = "серьёзные потери" if a_inj >= 3 else "небольшие потери"
+            lines.append(f"У {away_team} {severity} — {a_inj} игрок(ов) не доступны.")
+        else:
+            lines.append(f"{away_team} выходит полным составом.")
+
+    if has_lineup:
+        lines.append("Стартовые составы уже объявлены.")
+
+    # ── H2H
+    sample = h2h.get("sample", 0)
+    if sample >= 3:
+        avg_h = h2h["avg_home_goals"]
+        avg_a = h2h["avg_away_goals"]
+        if avg_h > avg_a + 0.4:
+            lines.append(
+                f"В личных встречах ({sample} матчей) {home_team} обычно забивает больше — "
+                f"{avg_h:.1f} vs {avg_a:.1f} гола в среднем."
+            )
+        elif avg_a > avg_h + 0.4:
+            lines.append(
+                f"В личных встречах ({sample} матчей) {away_team} обычно забивает больше — "
+                f"{avg_a:.1f} vs {avg_h:.1f} гола в среднем."
+            )
+        else:
+            lines.append(
+                f"В личных встречах ({sample} матчей) команды примерно равны по голам."
+            )
+
+    # ── Edge explanation
+    bookie_pct = round(100 / bookie_odds, 1)
+    model_pct  = round(model_prob * 100, 1)
+    diff       = round(model_pct - bookie_pct, 1)
+    lines.append(
+        f"Наша модель даёт {model_pct}% на этот исход. "
+        f"Букмекер оценивает лишь в {bookie_pct}% — "
+        f"разница {diff}% в нашу пользу."
+    )
+
+    return "\n   ".join(lines)
+
+
 # ── Main entry point ───────────────────────────────────────────────────────────
 
 def analyze_fixture_v2(fixture: dict) -> list[dict]:
@@ -188,6 +280,11 @@ def analyze_fixture_v2(fixture: dict) -> list[dict]:
             continue
         edge = _edge(model_prob, bookie_odds)
         if edge >= MIN_EDGE:
+            comment = _build_comment(
+                selection, model_prob, bookie_odds,
+                fixture["home_team"], fixture["away_team"],
+                home_form, away_form, h2h, lu,
+            )
             value_bets.append({
                 # ── core fields (same as v1)
                 "match_id":      str(fix_id),
@@ -210,6 +307,7 @@ def analyze_fixture_v2(fixture: dict) -> list[dict]:
                 "home_injuries": lu["home_injuries"],
                 "away_injuries": lu["away_injuries"],
                 "dc_applied":    True,
+                "comment":       comment,
             })
 
     return value_bets
